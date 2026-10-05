@@ -133,5 +133,13 @@ subtest 'should send events with metadata' => sub {
 	is $event3->{id}, 3, 'third message id';
 };
 
+subtest 'should report a declined stream' => sub {
+	my $events = intercept { sse $app, '/missing' };
+	my @asserts = map { $_->facet_data->{assert} // () } $events->event_list;
+	is [map { $_->{details} } grep { !$_->{pass} } @asserts], ['Connecting to sse /missing failed'],
+		'connect failure reported';
+	is sse->status, 404, 'declined with 404';
+};
+
 done_testing;
 

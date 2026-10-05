@@ -158,7 +158,8 @@ sub _sse ($app, $path, @args)
 {
 	$LAST_SSE = _build_client($app)->sse($path, @args);
 
-	if ($LAST_SSE->is_closed) {
+	# a declined stream comes back as an ordinary response
+	if ($LAST_SSE isa PAGI::Test::Response) {
 		my $ctx = context();
 		$ctx->fail("Connecting to sse $path failed");
 		$ctx->release;
@@ -356,7 +357,9 @@ The first argument is the Thunderhorse application object. The second argument
 is the SSE endpoint path. Additional arguments are passed as options to the
 underlying client.
 
-If the SSE connection fails to establish, a test failure is recorded.
+If the application declines the stream, a test failure is recorded and the
+returned object is the decline's L<PAGI::Test::Response> (with C<status>,
+C<text> and the rest), not an SSE connection.
 
 The returned SSE object is a L<PAGI::Test::SSE> object with methods
 like:
