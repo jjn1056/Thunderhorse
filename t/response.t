@@ -18,6 +18,7 @@ package Stringifies {
 
 package ResponseApp {
 	use Mooish::Base -standard;
+	use Future::AsyncAwait;
 
 	extends 'Thunderhorse::App';
 
@@ -45,6 +46,11 @@ package ResponseApp {
 			'/no_content' => sub ($self, $ctx) { $ctx->res->content_type('text/plain')->status(204) },
 			'/no_content_with_body' => sub ($self, $ctx) { $ctx->res->status(204)->text('body') },
 			'/extra_arguments' => sub ($self, $ctx) { $ctx->res->text('x', status => 201) },
+			'/unencodable' => sub ($self, $ctx) { $ctx->res->json({x => sub { 1 }}) },
+			'/send_res_unset' => async sub ($self, $ctx) {
+				$ctx->res->header('X-Only' => 'yes');
+				await $ctx->send_res;
+			},
 		);
 
 		$self->router->add($_ => {to => $routes{$_}}) for sort keys %routes;
@@ -52,6 +58,8 @@ package ResponseApp {
 }
 
 my $app = ResponseApp->new;
+my @errors;
+$app->add_hook(error => sub ($controller, $ctx, $error) { push @errors, "$error" });
 
 subtest 'text sends UTF-8 plain text' => sub {
 	http $app, GET '/text';
@@ -142,9 +150,25 @@ subtest 'a bodiless status sends no content type' => sub {
 	is http->content, '', 'no body';
 };
 
-subtest 'a body with a bodiless status dies at respond' => sub {
-	like dies { http $app, GET '/no_content_with_body' },
-		qr/response body is forbidden for status 204/, 'exception ok';
+subtest 'a response that cannot be built goes through error handling' => sub {
+	@errors = ();
+
+	http $app, GET '/no_content_with_body';
+	http_status_is 500;
+	like http->text, qr/response body is forbidden for status 204/, 'bodiless status error page';
+
+	http $app, GET '/unencodable';
+	http_status_is 500;
+	like http->text, qr/encountered CODE/, 'unencodable JSON error page';
+
+	is scalar(@errors), 2, 'error hook fired for both';
+};
+
+subtest 'send_res without a status sends 200' => sub {
+	http $app, GET '/send_res_unset';
+	http_status_is 200;
+	http_header_is 'x-only', 'yes';
+	is http->content, '', 'no body';
 };
 
 subtest 'extra arguments to a body method die' => sub {

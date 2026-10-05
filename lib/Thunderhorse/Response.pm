@@ -26,11 +26,13 @@ has field '_headers' => (
 	default => sub { [] },
 );
 
-# [response class name, body] for the response built at respond time
+# [response class name, body] for the response built at respond time; the
+# last body set wins, so setting one replaces a response value
 has field '_body' => (
 	(STRICT ? (isa => Tuple [Str, Any]) : ()),
 	writer => 1,
 	predicate => 1,
+	trigger => sub ($self, @) { $self->_clear_value },
 );
 
 # a complete response value set with value(); sent instead of the fields above
@@ -38,6 +40,7 @@ has field '_value' => (
 	(STRICT ? (isa => InstanceOf ['PAGI::Response']) : ()),
 	writer => 1,
 	predicate => 1,
+	clearer => 1,
 );
 
 sub update ($self, $scope, $receive, $send)
@@ -146,7 +149,7 @@ sub _response_value ($self)
 	my @status = $self->has_status ? (status => $self->_status) : ();
 	my @headers = $self->_headers->@*;
 
-	return response('Empty', @status, headers => [_without_content_type(@headers)])
+	return response('Empty', status => $self->status, headers => [_without_content_type(@headers)])
 		unless $self->_has_body;
 
 	my ($class, $body) = $self->_body->@*;
@@ -306,9 +309,11 @@ C<301>, C<302>, C<303>, C<307> or C<308>.
 	$res = $res->value($response)
 
 Sends C<$response>, a complete L<PAGI::Response> value such as one built with
-C<response> from L<PAGI::Response>, exactly as it is. Status, headers, content
-type and body set on this object before or after are not sent. This is how to
-send a file, a stream or any other response this class does not build itself.
+C<response> from L<PAGI::Response>, exactly as it is. Status, headers and
+content type set on this object before or after are not sent; a body method
+called after it (L</text>, L</html>, L</json>, L</redirect>) replaces it, as
+the last body set wins. This is how to send a file, a stream or any other
+response this class does not build itself.
 
 =head3 has_body_source
 

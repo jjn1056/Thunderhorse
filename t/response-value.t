@@ -35,6 +35,10 @@ package ValueApp {
 			'/value' => sub ($self, $ctx) {
 				$ctx->res->value(response('Text', 'from value'));
 			},
+			'/value_then_body' => sub ($self, $ctx) {
+				$ctx->res->value(response('Text', 'from value'));
+				$ctx->res->status(500)->html('error page');
+			},
 			'/value_ignores_setters' => sub ($self, $ctx) {
 				$ctx->res->status(500)->header('X-Before' => 'yes');
 				$ctx->res->value(response('Text', 'from value'))->status(404);
@@ -72,6 +76,13 @@ subtest 'value ignores setters before and after it' => sub {
 	http_status_is 200;
 	is http->header('x-before'), undef, 'earlier header not sent';
 	http_text_is 'from value';
+};
+
+subtest 'a body method after value replaces it' => sub {
+	http $app, GET '/value_then_body';
+	http_status_is 500;
+	http_header_is 'content-type', 'text/html; charset=utf-8';
+	http_text_is 'error page';
 };
 
 done_testing;
