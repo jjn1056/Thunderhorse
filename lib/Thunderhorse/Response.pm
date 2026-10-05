@@ -33,6 +33,13 @@ has field '_body' => (
 	predicate => 1,
 );
 
+# a complete response value set with value(); sent instead of the fields above
+has field '_value' => (
+	(STRICT ? (isa => InstanceOf ['PAGI::Response']) : ()),
+	writer => 1,
+	predicate => 1,
+);
+
 sub update ($self, $scope, $receive, $send)
 {
 	return;
@@ -95,9 +102,15 @@ sub redirect ($self, $url, $status = 302)
 	return $self;
 }
 
+sub value ($self, $response)
+{
+	$self->_set_value($response);
+	return $self;
+}
+
 sub has_body_source ($self)
 {
-	return $self->_has_body;
+	return $self->_has_value || $self->_has_body;
 }
 
 sub _allows_empty_body ($self, $status)
@@ -127,6 +140,9 @@ async sub respond ($self, $send)
 
 sub _response_value ($self)
 {
+	return $self->_value
+		if $self->_has_value;
+
 	my @status = $self->has_status ? (status => $self->_status) : ();
 	my @headers = $self->_headers->@*;
 
@@ -285,11 +301,20 @@ member order is unspecified.
 Redirects to C<$url>, replacing any status set earlier. C<$status> must be
 C<301>, C<302>, C<303>, C<307> or C<308>.
 
+=head3 value
+
+	$res = $res->value($response)
+
+Sends C<$response>, a complete L<PAGI::Response> value such as one built with
+C<response> from L<PAGI::Response>, exactly as it is. Status, headers, content
+type and body set on this object before or after are not sent. This is how to
+send a file, a stream or any other response this class does not build itself.
+
 =head3 has_body_source
 
 	$bool = $res->has_body_source
 
-Returns whether a body was set.
+Returns whether a body or a response value was set.
 
 =head3 is_ready
 
