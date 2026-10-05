@@ -1362,8 +1362,9 @@ them.
 	async sub render_response($self, $controller, $ctx, $result) { ... }
 
 This method is only run when a handler for a location does not consume the
-context, but returns a defined value. The default implementation does the
-following things:
+context, but returns a defined value. A L<PAGI::Response> value is sent as it
+is (see L<Thunderhorse::Response/value>). For anything else, the default
+implementation does the following things:
 
 =over
 

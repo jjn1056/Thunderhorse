@@ -63,9 +63,10 @@ Client transaction class.
 
 Request class.
 
-=item * L<Thunderhorse::Response> (L<PAGI::Response>)
+=item * L<Thunderhorse::Response>
 
-Response class.
+Response class. It builds a L<PAGI::Response> value rather than extending
+L<PAGI::Response>.
 
 =item * L<Thunderhorse::WebSocket> (L<PAGI::WebSocket>)
 
