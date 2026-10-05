@@ -11,7 +11,7 @@ Revision history for Thunderhorse
 	- Requires PAGI::Tools 0.002003 (and PAGI::Server 0.002014)
 	- Response no longer inherits the rest of the old PAGI::Response builder; return a PAGI::Response value instead
 	- text, html and json take one argument; json key order is unspecified
-	- A body together with a status that forbids one (1xx, 204, 205, 304) dies when sent
+	- A body together with a status that forbids one (1xx, 204, 205, 304) is an error when sent (500 through the error handlers)
 
 0.106 - 2026-06-27
 	[Public interface changes]
