@@ -2,13 +2,13 @@ Revision history for Thunderhorse
 
 {{$NEXT}}
 	[Public interface changes]
-	- Response is Thunderhorse's own builder, sent as a PAGI::Response value (PAGI::Tools 0.002003)
+	- Response is Thunderhorse's own builder, sent as a PAGI::Response value (PAGI::Tools 0.003000)
 		- keeps status, status_try, content_type, header, text, html, json, redirect, is_ready
 		- a handler may return a PAGI::Response value; added value method to Response
 	- An SSE stream the handler leaves open is closed when the handler returns
 
 	[Breaking changes]
-	- Requires PAGI::Tools 0.002003 (and PAGI::Server 0.002014)
+	- Requires PAGI::Tools 0.003000 (and PAGI::Server 0.003000)
 	- Response no longer inherits the rest of the old PAGI::Response builder; return a PAGI::Response value instead
 	- text, html and json take one argument; json key order is unspecified
 	- A body together with a status that forbids one (1xx, 204, 205, 304) is an error when sent (500 through the error handlers)
