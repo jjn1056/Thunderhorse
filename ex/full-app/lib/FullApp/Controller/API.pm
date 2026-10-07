@@ -3,7 +3,6 @@ package FullApp::Controller::API;
 use v5.40;
 use Mooish::Base;
 use Future::AsyncAwait;
-use PAGI::Response qw(response);
 
 extends 'Thunderhorse::Controller';
 
@@ -13,14 +12,6 @@ sub build ($self)
 		'/locations' => {
 			to => 'list_locations',
 			name => 'location_list_api',
-			action => 'http.get',
-		}
-	);
-
-	$self->router->add(
-		'/locations/count' => {
-			to => 'count_locations',
-			name => 'location_count_api',
 			action => 'http.get',
 		}
 	);
@@ -51,9 +42,3 @@ sub list_locations ($self, $ctx)
 	$ctx->res->json(\@locations);
 }
 
-# A handler may return a complete PAGI response value instead of using $ctx->res.
-sub count_locations ($self, $ctx)
-{
-	my @locations = $self->flatten_locations($self->router);
-	return response('JSON', {count => scalar @locations});
-}

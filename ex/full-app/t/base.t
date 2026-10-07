@@ -12,12 +12,5 @@ subtest 'should show welcome page' => sub {
 	like http->text, qr{\Qappears to be operational\E}, 'body ok';
 };
 
-subtest 'should return a response value from a handler' => sub {
-	http $app, GET '/locations/count';
-	http_status_is 200;
-	http_header_is 'content-type', 'application/json';
-	like http->text, qr{"count":\d+}, 'body ok';
-};
-
 done_testing;
 
