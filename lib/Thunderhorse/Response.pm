@@ -24,18 +24,6 @@ sub update ($self, $scope, $receive, $send)
 	return;
 }
 
-# Thunderhorse renders whatever it is given as text, including the exception
-# objects its error pages receive, so bodies are stringified here
-sub text ($self, $text)
-{
-	return $self->SUPER::text('' . ($text // ''));
-}
-
-sub html ($self, $html)
-{
-	return $self->SUPER::html('' . ($html // ''));
-}
-
 sub _allows_empty_body ($self, $status)
 {
 	# HTTP protocol hardcodes - these statuses can have empty bodies
@@ -116,17 +104,6 @@ constructor arguments.
 Called automatically when the context's PAGI tuple changes via setter of
 L<Thunderhorse::Context/pagi>. The response holds no PAGI scope, so this does
 nothing; L</respond> takes the scope from the context.
-
-=head3 text
-
-=head3 html
-
-	$res->text($text)
-	$res->html($html)
-
-As in L<PAGI::ResponseBuilder>, but the argument is stringified first, and
-C<undef> becomes an empty body, so an exception object renders as its
-message.
 
 =head3 is_ready
 
