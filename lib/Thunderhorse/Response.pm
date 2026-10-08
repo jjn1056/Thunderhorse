@@ -2,23 +2,43 @@ package Thunderhorse::Response;
 
 use v5.40;
 use Mooish::Base -standard;
+use Future::AsyncAwait;
 
 use Gears::X::Thunderhorse;
 
-extends 'PAGI::Response';
+extends 'PAGI::ResponseBuilder';
 with 'Thunderhorse::Message';
+
+# NOTE: behaviour inherited from PAGI::ResponseBuilder that differs from the
+# PAGI::Response builder (PAGI-Tools 0.002) this class extended before:
+# - json() leaves key order unspecified (it was canonical, sorted)
+# - cookie() sends path=/ by default and lower-case attribute names, and URI-
+#   escapes the value; delete_cookie() sends expires as well as max-age
+# - empty() is a 200 unless a status was set (it was 204)
+# - a redirect's status belongs to the redirect: choosing another body after
+#   it uses the status set with status(), or 200 (the 302 used to stick)
+# - header_all() returns an array reference (it was a list)
+# - text() and html() take only defined strings (references were stringified)
+# - send_file() is file(); cors() is gone, PAGI::Middleware::CORS does it
 
 sub FOREIGNBUILDARGS ($class, %args)
 {
 	Gears::X::Thunderhorse->raise('no context for response')
 		unless $args{context};
 
-	return ($args{context}->pagi->[0]);
+	# the builder takes no constructor arguments
+	return;
 }
 
+# NOTE: a no-op, kept because Context::update calls it on every request and
+# Thunderhorse::Message's default dies. It could go instead: drop the
+# $self->res->update(...) line from Context::update (and "response" from
+# that method's POD), then delete this method and its POD. Nothing else calls
+# it, though the role's dying update would remain on Response.
 sub update ($self, $scope, $receive, $send)
 {
-	$self->{scope} = $scope;
+	# the builder holds no scope: respond() takes it from the context
+	return;
 }
 
 sub _allows_empty_body ($self, $status)
@@ -39,6 +59,23 @@ sub is_ready ($self)
 	return false;
 }
 
+# NOTE: PAGI-Tools sends any response as an application:
+# $res->to_app->($scope, $receive, $send). It deliberately has one method for
+# this, not a respond() alongside it, and chose to_app because the name is
+# already familiar from Plack, where a component becomes an application the
+# same way (Plack::Component's to_app). This method only keeps
+# Context::send_res and try_send_res unchanged, which is the least disruptive
+# port. Following the PAGI-Tools way instead, those two call sites would call
+# $self->res->to_app->($self->scope, $self->receiver, $self->sender), and this
+# method could go.
+async sub respond ($self, $send)
+{
+	my $context = $self->context;
+	await $self->to_app->($context->scope, $context->receiver, $send);
+
+	return;
+}
+
 __END__
 
 =head1 NAME
@@ -56,17 +93,17 @@ Thunderhorse::Response - Response wrapper for Thunderhorse
 
 =head1 DESCRIPTION
 
-Thunderhorse::Response is a thin wrapper around L<PAGI::Response> that
+Thunderhorse::Response is a thin wrapper around L<PAGI::ResponseBuilder> that
 integrates with L<Thunderhorse::Context>. It provides a fluent interface for
 building HTTP responses, including JSON, HTML, redirects, and file
 downloads.
 
-This class extends L<PAGI::Response> and mixes in C<Thunderhorse::Message> to
-provide context integration.
+This class extends L<PAGI::ResponseBuilder> and mixes in
+C<Thunderhorse::Message> to provide context integration.
 
 =head1 INTERFACE
 
-Inherits all interface from L<PAGI::Response>, and adds the interface
+Inherits all interface from L<PAGI::ResponseBuilder>, and adds the interface
 documented below.
 
 =head2 Attributes
@@ -90,8 +127,9 @@ constructor arguments.
 
 	$res->update($scope, $receive, $send)
 
-Updates the internal PAGI scope. Called automatically when the context's PAGI
-tuple changes via setter of L<Thunderhorse::Context/pagi>.
+Called automatically when the context's PAGI tuple changes via setter of
+L<Thunderhorse::Context/pagi>. The response holds no PAGI scope, so this does
+nothing; L</respond> takes the scope from the context.
 
 =head3 is_ready
 
@@ -104,7 +142,13 @@ route handler returns.
 Response is ready if it has a body, or if it has a status which does not
 require body like C<204 No Content> or C<3XX>.
 
+=head3 respond
+
+	await $res->respond($send)
+
+Sends the response with the context's scope and receiver and the given
+C<$send>. L<Thunderhorse::Context/send_res> calls it.
+
 =head1 SEE ALSO
 
-L<Thunderhorse>, L<PAGI::Response>, L<Thunderhorse::Context>
-
+L<Thunderhorse>, L<PAGI::ResponseBuilder>, L<Thunderhorse::Context>

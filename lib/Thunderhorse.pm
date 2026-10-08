@@ -117,7 +117,21 @@ sub build_handler ($controller, $destination)
 		# page (but not 404). Currently, a PAGI error is raised, informing
 		# about app returning without sending respnose.
 		# NOTE: this needs to be here, since we want to use $send from this context
-		await $ctx->try_send_res;
+		# NOTE: a response that fails before it starts sending (a missing
+		# file, for example) goes through error handling like a failing
+		# handler; once sending has started it can only be rethrown.
+		# PAGI-Tools' File response checks the file when it is sent, where
+		# the old send_file() checked it when called, inside the handler's
+		# try above. Without this catch a missing file would bypass on_error
+		# and reach the server as a bare 500.
+		try {
+			await $ctx->try_send_res;
+		}
+		catch ($ex) {
+			die $ex if $ctx->connection->response_started;
+			await $controller->_on_error($ctx, $ex);
+			await $ctx->try_send_res;
+		}
 
 		# if this is a bridge and bridge did not render, it means we are
 		# free to go deeper. Avoid first match, as it was handled already

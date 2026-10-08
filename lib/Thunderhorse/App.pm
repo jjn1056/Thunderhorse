@@ -241,7 +241,14 @@ sub run ($self)
 async sub render_error ($self, $controller, $ctx, $code, $message = undef)
 {
 	$message = defined $message && !$self->is_production ? $message : status_message($code);
-	$ctx->empty_res->status($code)->text($message);
+
+	# $message is whatever on_error caught: a string, a Gears::X object, or any
+	# other value passed to die. PAGI::ResponseBuilder's text() takes only
+	# strings (a reference is an error rather than a body showing its address),
+	# so the exception is stringified here, which is where it is known to be an
+	# exception. Another approach would work as well, such as on_error passing a
+	# string, or rendering the exception's fields instead of its message.
+	$ctx->empty_res->status($code)->text("$message");
 }
 
 async sub render_response ($self, $controller, $ctx, $result)
