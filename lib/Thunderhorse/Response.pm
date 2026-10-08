@@ -19,6 +19,7 @@ has field '_content_type' => (
 	(STRICT ? (isa => Str) : ()),
 	writer => 1,
 	predicate => 1,
+	clearer => 1,
 );
 
 has field '_headers' => (
@@ -70,12 +71,17 @@ sub content_type ($self, @type)
 	return $self->_content_type
 		unless @type;
 
-	$self->_set_content_type($type[0]);
+	defined $type[0]
+		? $self->_set_content_type($type[0])
+		: $self->_clear_content_type;
 	return $self;
 }
 
 sub header ($self, $name, $value)
 {
+	return $self->content_type($value)
+		if lc $name eq 'content-type';
+
 	push $self->_headers->@*, $name, $value;
 	return $self;
 }

@@ -43,6 +43,13 @@ package ResponseApp {
 			'/header_content_type' => sub ($self, $ctx) {
 				$ctx->res->header('Content-Type' => 'text/x-custom')->text('h')
 			},
+			'/header_content_type_lc' => sub ($self, $ctx) {
+				$ctx->res->header('content-type' => 'text/csv')->text('a,b')
+			},
+			'/header_json_type' => sub ($self, $ctx) {
+				$ctx->res->header('Content-Type' => 'application/json')->text('{}')
+			},
+			'/content_type_undef' => sub ($self, $ctx) { $ctx->res->content_type(undef)->text('u') },
 			'/no_content' => sub ($self, $ctx) { $ctx->res->content_type('text/plain')->status(204) },
 			'/no_content_with_body' => sub ($self, $ctx) { $ctx->res->status(204)->text('body') },
 			'/extra_arguments' => sub ($self, $ctx) { $ctx->res->text('x', status => 201) },
@@ -138,9 +145,21 @@ subtest 'header adds a response header' => sub {
 	http_text_is 'h';
 };
 
-subtest 'a Content-Type set through header is kept' => sub {
+subtest 'a Content-Type set through header gets the charset, as through content_type' => sub {
 	http $app, GET '/header_content_type';
-	http_header_is 'content-type', 'text/x-custom';
+	http_header_is 'content-type', 'text/x-custom; charset=utf-8';
+	http $app, GET '/header_content_type_lc';
+	http_header_is 'content-type', 'text/csv; charset=utf-8';
+	http $app, GET '/header_json_type';
+	http_header_is 'content-type', 'application/json';
+};
+
+subtest 'content_type(undef) leaves the body default in place' => sub {
+	my @warnings;
+	local $SIG{__WARN__} = sub { push @warnings, @_ };
+	http $app, GET '/content_type_undef';
+	http_header_is 'content-type', 'text/plain; charset=utf-8';
+	is \@warnings, [], 'no warnings';
 };
 
 subtest 'a bodiless status sends no content type' => sub {
