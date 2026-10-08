@@ -44,6 +44,18 @@ package SSETestApp {
 				to => 'close_test',
 			}
 		);
+
+		$router->add(
+			'/nostart' => {
+				action => 'sse',
+				to => 'nostart',
+			}
+		);
+	}
+
+	async sub nostart ($self, $ctx)
+	{
+		return;
 	}
 
 	async sub simple ($self, $ctx)
@@ -139,6 +151,14 @@ subtest 'should report a declined stream' => sub {
 	is [map { $_->{details} } grep { !$_->{pass} } @asserts], ['Connecting to sse /missing failed'],
 		'connect failure reported';
 	is sse->status, 404, 'declined with 404';
+};
+
+subtest 'should decline a stream its handler never starts' => sub {
+	my $events = intercept { sse $app, '/nostart' };
+	my @asserts = map { $_->facet_data->{assert} // () } $events->event_list;
+	is [map { $_->{details} } grep { !$_->{pass} } @asserts], ['Connecting to sse /nostart failed'],
+		'connect failure reported';
+	is sse->status, 404, 'declined with 404, as an unconsumed context is';
 };
 
 done_testing;
