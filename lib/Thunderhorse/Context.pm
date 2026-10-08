@@ -138,6 +138,12 @@ async sub send_res ($self)
 
 async sub try_send_res ($self)
 {
+	# PAGI requires sse.close to end a stream; handlers may just return
+	if ($self->has_sse && $self->sse->is_started && !$self->sse->is_closed) {
+		await $self->sse->close;
+		return;
+	}
+
 	return
 		if $self->connection->response_started;
 
@@ -317,6 +323,9 @@ been sent. Force-sends the response even if it has an empty body.
 Similar as L</send_res>, but does nothing if the response has already been
 sent. Also skips sending the response if it is not ready yet, according to
 L<Thunderhorse::Response/is_ready>.
+
+If the handler started a Server-Sent Events stream and left it open, closes the
+stream instead, since PAGI requires an explicit close to end one.
 
 Note that you don't have to use this method explicitly. Thunderhorse will
 automatically use it after the route handler returns.
