@@ -2,124 +2,38 @@ package Thunderhorse::Response;
 
 use v5.40;
 use Mooish::Base -standard;
-
-use Devel::StrictMode;
 use Future::AsyncAwait;
-use PAGI::Response qw(response);
 
+use Gears::X::Thunderhorse;
+
+extends 'PAGI::ResponseBuilder';
 with 'Thunderhorse::Message';
 
-has field '_status' => (
-	(STRICT ? (isa => Int) : ()),
-	writer => 1,
-	predicate => 'has_status',
-);
-
-has field '_content_type' => (
-	(STRICT ? (isa => Str) : ()),
-	writer => 1,
-	predicate => 1,
-	clearer => 1,
-);
-
-has field '_headers' => (
-	(STRICT ? (isa => ArrayRef) : ()),
-	default => sub { [] },
-);
-
-# [response class name, body] for the response built at respond time; the
-# last body set wins, so setting one replaces a response value
-has field '_body' => (
-	(STRICT ? (isa => Tuple [Str, Any]) : ()),
-	writer => 1,
-	predicate => 1,
-	trigger => sub ($self, @) { $self->_clear_value },
-);
-
-# a complete response value set with value(); sent instead of the fields above
-has field '_value' => (
-	(STRICT ? (isa => InstanceOf ['PAGI::Response']) : ()),
-	writer => 1,
-	predicate => 1,
-	clearer => 1,
-);
-
-sub update ($self, $scope, $receive, $send)
+sub FOREIGNBUILDARGS ($class, %args)
 {
+	Gears::X::Thunderhorse->raise('no context for response')
+		unless $args{context};
+
+	# the builder takes no constructor arguments
 	return;
 }
 
-sub status ($self, @code)
+sub update ($self, $scope, $receive, $send)
 {
-	return $self->has_status ? $self->_status : 200
-		unless @code;
-
-	$self->_set_status($code[0]);
-	return $self;
+	# the builder holds no scope: respond() takes it from the context
+	return;
 }
 
-sub status_try ($self, $code)
-{
-	$self->_set_status($code)
-		unless $self->has_status;
-
-	return $self;
-}
-
-sub content_type ($self, @type)
-{
-	return $self->_content_type
-		unless @type;
-
-	defined $type[0]
-		? $self->_set_content_type($type[0])
-		: $self->_clear_content_type;
-	return $self;
-}
-
-sub header ($self, $name, $value)
-{
-	return $self->content_type($value)
-		if lc $name eq 'content-type' && defined $value;
-
-	push $self->_headers->@*, $name, $value;
-	return $self;
-}
-
+# Thunderhorse renders whatever it is given as text, including the exception
+# objects its error pages receive, so bodies are stringified here
 sub text ($self, $text)
 {
-	$self->_set_body(['Text', '' . ($text // '')]);
-	return $self;
+	return $self->SUPER::text('' . ($text // ''));
 }
 
 sub html ($self, $html)
 {
-	$self->_set_body(['HTML', '' . ($html // '')]);
-	return $self;
-}
-
-sub json ($self, $data)
-{
-	$self->_set_body(['JSON', $data]);
-	return $self;
-}
-
-sub redirect ($self, $url, $status = 302)
-{
-	$self->_set_status($status);
-	$self->_set_body(['Redirect', $url]);
-	return $self;
-}
-
-sub value ($self, $response)
-{
-	$self->_set_value($response);
-	return $self;
-}
-
-sub has_body_source ($self)
-{
-	return $self->_has_value || $self->_has_body;
+	return $self->SUPER::html('' . ($html // ''));
 }
 
 sub _allows_empty_body ($self, $status)
@@ -143,64 +57,16 @@ sub is_ready ($self)
 async sub respond ($self, $send)
 {
 	my $context = $self->context;
-	await $self->_response_value->to_app->($context->scope, $context->receiver, $send);
+	await $self->to_app->($context->scope, $context->receiver, $send);
+
 	return;
-}
-
-sub _response_value ($self)
-{
-	return $self->_value
-		if $self->_has_value;
-
-	my @status = $self->has_status ? (status => $self->_status) : ();
-	my @headers = $self->_headers->@*;
-
-	return response('Empty', status => $self->status, headers => [_without_content_type(@headers)])
-		unless $self->_has_body;
-
-	my ($class, $body) = $self->_body->@*;
-	return response('Redirect', $body, @status,
-		($self->_has_content_type ? (content_type => $self->_content_type) : ()),
-		headers => \@headers)
-		if $class eq 'Redirect';
-
-	my @content_type = $self->_has_content_type
-		? (content_type => _with_charset($self->_content_type))
-		: ();
-
-	return response($class, $body, @status, @content_type, headers => \@headers);
-}
-
-# Bodies are sent as UTF-8, so a text content type without a charset says so.
-# JSON is UTF-8 by definition and takes no charset parameter.
-sub _with_charset ($type)
-{
-	return $type if $type =~ m{charset=}i;
-
-	my ($media) = $type =~ m{^\s*([^;]+)};
-	$media =~ s{\s+\z}{};
-	return $type if lc $media eq 'application/json' || $media =~ m{\+json\z}i;
-
-	return "$type; charset=utf-8";
-}
-
-# A response without a body carries no content type.
-sub _without_content_type (@headers)
-{
-	my @kept;
-	for (my $index = 0; $index < @headers; $index += 2) {
-		push @kept, @headers[$index, $index + 1]
-			unless lc $headers[$index] eq 'content-type';
-	}
-
-	return @kept;
 }
 
 __END__
 
 =head1 NAME
 
-Thunderhorse::Response - Response builder for Thunderhorse
+Thunderhorse::Response - Response wrapper for Thunderhorse
 
 =head1 SYNOPSIS
 
@@ -213,15 +79,18 @@ Thunderhorse::Response - Response builder for Thunderhorse
 
 =head1 DESCRIPTION
 
-Thunderhorse::Response collects a response for the current request: a status,
-headers, a content type and a body. When the route handler returns,
-Thunderhorse turns it into a L<PAGI::Response> value and sends it. Every setter
-returns the response object, so calls can be chained.
+Thunderhorse::Response is a thin wrapper around L<PAGI::ResponseBuilder> that
+integrates with L<Thunderhorse::Context>. It provides a fluent interface for
+building HTTP responses, including JSON, HTML, redirects, and file
+downloads.
 
-The body methods set the body; the last one called wins. A body is sent as
-UTF-8.
+This class extends L<PAGI::ResponseBuilder> and mixes in
+C<Thunderhorse::Message> to provide context integration.
 
 =head1 INTERFACE
+
+Inherits all interface from L<PAGI::ResponseBuilder>, and adds the interface
+documented below.
 
 =head2 Attributes
 
@@ -245,91 +114,19 @@ constructor arguments.
 	$res->update($scope, $receive, $send)
 
 Called automatically when the context's PAGI tuple changes via setter of
-L<Thunderhorse::Context/pagi>. A response holds no per-tuple state, so it does
-nothing.
-
-=head3 status
-
-	$res = $res->status($code)
-	$code = $res->status
-
-Sets the response status. Without an argument, returns the status, or C<200>
-when none was set.
-
-=head3 has_status
-
-	$bool = $res->has_status
-
-Returns whether a status was set.
-
-=head3 status_try
-
-	$res = $res->status_try($code)
-
-Sets the status only if none was set yet.
-
-=head3 content_type
-
-	$res = $res->content_type($type)
-	$type = $res->content_type
-
-Sets the content type, which wins over the body's own default. A text type
-without a C<charset> parameter is sent with C<; charset=utf-8>; a JSON type is
-sent as it is. C<undef> clears a type set earlier, so the body's default
-applies again. Without an argument, returns the content type that was set, or
-C<undef>.
-
-=head3 header
-
-	$res = $res->header($name, $value)
-
-Adds a response header. A C<Content-Type> header, in any case, sets the
-content type instead, as L</content_type> does.
+L<Thunderhorse::Context/pagi>. The response holds no PAGI scope, so this does
+nothing; L</respond> takes the scope from the context.
 
 =head3 text
 
-	$res = $res->text($text)
-
-Sets a plain-text body, by default C<text/plain; charset=utf-8>. A non-string,
-such as an exception object, is stringified.
-
 =head3 html
 
-	$res = $res->html($html)
+	$res->text($text)
+	$res->html($html)
 
-Sets an HTML body, by default C<text/html; charset=utf-8>. A non-string is
-stringified.
-
-=head3 json
-
-	$res = $res->json($data)
-
-Sets a JSON body encoded from C<$data>, by default C<application/json>. Object
-member order is unspecified.
-
-=head3 redirect
-
-	$res = $res->redirect($url, $status = 302)
-
-Redirects to C<$url>, replacing any status set earlier. C<$status> must be
-C<301>, C<302>, C<303>, C<307> or C<308>.
-
-=head3 value
-
-	$res = $res->value($response)
-
-Sends C<$response>, a complete L<PAGI::Response> value such as one built with
-C<response> from L<PAGI::Response>, exactly as it is. Status, headers and
-content type set on this object before or after are not sent; a body method
-called after it (L</text>, L</html>, L</json>, L</redirect>) replaces it, as
-the last body set wins. This is how to send a file, a stream or any other
-response this class does not build itself.
-
-=head3 has_body_source
-
-	$bool = $res->has_body_source
-
-Returns whether a body or a response value was set.
+As in L<PAGI::ResponseBuilder>, but the argument is stringified first, and
+C<undef> becomes an empty body, so an exception object renders as its
+message.
 
 =head3 is_ready
 
@@ -346,11 +143,9 @@ require body like C<204 No Content> or C<3XX>.
 
 	await $res->respond($send)
 
-Builds the L<PAGI::Response> value and sends it with C<$send>. A status that
-forbids a body (C<1xx>, C<204>, C<205>, C<304>) together with a body dies here.
-Thunderhorse calls this through L<Thunderhorse::Context/send_res> and
-L<Thunderhorse::Context/try_send_res>.
+Sends the response with the context's scope and receiver and the given
+C<$send>. L<Thunderhorse::Context/send_res> calls it.
 
 =head1 SEE ALSO
 
-L<Thunderhorse>, L<PAGI::Response>, L<Thunderhorse::Context>
+L<Thunderhorse>, L<PAGI::ResponseBuilder>, L<Thunderhorse::Context>

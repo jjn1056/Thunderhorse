@@ -19,6 +19,7 @@ package Stringifies {
 package ResponseApp {
 	use Mooish::Base -standard;
 	use Future::AsyncAwait;
+	use Gears::X::HTTP;
 
 	extends 'Thunderhorse::App';
 
@@ -62,6 +63,22 @@ package ResponseApp {
 			'/send_res_unset' => async sub ($self, $ctx) {
 				$ctx->res->header('X-Only' => 'yes');
 				await $ctx->send_res;
+			},
+			'/raise_object' => sub ($self, $ctx) {
+				Gears::X::HTTP->raise(418, 'short and stout');
+			},
+			'/missing_file' => sub ($self, $ctx) { $ctx->res->file('/no/such/file') },
+			'/after_body' => sub ($self, $ctx) {
+				$ctx->res->cookie(a => 1)->text('x')->header('X-After' => 'yes');
+			},
+			'/stream' => sub ($self, $ctx) {
+				$ctx->res->stream(async sub ($writer) {
+					await $writer->write("one\n");
+					await $writer->write("two\n");
+				});
+			},
+			'/stream_dies' => sub ($self, $ctx) {
+				$ctx->res->stream(async sub ($writer) { die "producer boom\n" });
 			},
 		);
 
@@ -215,6 +232,41 @@ subtest 'extra arguments to a body method die' => sub {
 	http $app, GET '/extra_arguments';
 	http_status_is 500;
 	like http->text, qr/Too many arguments/, 'error ok';
+};
+
+subtest 'an exception object renders as text' => sub {
+	http $app, GET '/raise_object';
+	http_status_is 418;
+	like http->text, qr/short and stout/, 'the message is rendered';
+};
+
+subtest 'a missing file fails before the response starts and reaches on_error' => sub {
+	@errors = ();
+	http $app, GET '/missing_file';
+	http_status_is 500;
+	like \@errors, [qr/Cannot inspect selected file/], 'error hook saw it';
+};
+
+subtest 'a cookie before the body and a header after it are both sent' => sub {
+	http $app, GET '/after_body';
+	http_status_is 200;
+	http_header_is 'x-after', 'yes';
+	like http->header('set-cookie'), qr/\Aa=1\b/;
+};
+
+subtest 'stream sends its chunks' => sub {
+	http $app, GET '/stream';
+	http_status_is 200;
+	http_text_is "one\ntwo\n";
+};
+
+# A Stream starts the response before its producer runs, so a producer's
+# failure is after the start: it is rethrown, never answered with an error page.
+subtest 'a failing stream producer is not answered with a second response' => sub {
+	@errors = ();
+	like dies { http $app, GET '/stream_dies' }, qr/producer boom/,
+		'rethrown (Test2::Thunderhorse raises app exceptions)';
+	is \@errors, [], 'on_error was not invoked';
 };
 
 done_testing;

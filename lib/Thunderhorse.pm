@@ -117,9 +117,9 @@ sub build_handler ($controller, $destination)
 		# page (but not 404). Currently, a PAGI error is raised, informing
 		# about app returning without sending respnose.
 		# NOTE: this needs to be here, since we want to use $send from this context
-		# NOTE: the response is built while it is sent, so a response that
-		# cannot be built goes through error handling like a failing handler,
-		# unless sending has already started
+		# NOTE: a response that fails before it starts sending (a missing
+		# file, for example) goes through error handling like a failing
+		# handler; once sending has started it can only be rethrown
 		try {
 			await $ctx->try_send_res;
 		}
@@ -434,19 +434,6 @@ This time, the return value of the destination is not ignored, since only
 setting response metadata does not cause the context to be consumed. Status and
 I<Content-Type> header will not be overridden, so the response will be sent as
 plaintext.
-
-A destination may also return a complete L<PAGI::Response> value, for example
-one built with C<response> from L<PAGI::Response>. It is sent as it is, which
-is the way to send a file, a stream, or anything else L<Thunderhorse::Response>
-does not build itself:
-
-	use PAGI::Response qw(response);
-
-	sub download ($self, $ctx)
-	{
-		return response('File', '/srv/reports/monthly.pdf',
-			filename => 'monthly.pdf');
-	}
 
 While not very common, a destination can be unimplemented when C<to> is
 skipped. Unimplemented locations will be "stepped over" during request
@@ -1362,9 +1349,8 @@ them.
 	async sub render_response($self, $controller, $ctx, $result) { ... }
 
 This method is only run when a handler for a location does not consume the
-context, but returns a defined value. A L<PAGI::Response> value is sent as it
-is (see L<Thunderhorse::Response/value>). For anything else, the default
-implementation does the following things:
+context, but returns a defined value. The default implementation does the
+following things:
 
 =over
 

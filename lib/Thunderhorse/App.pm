@@ -246,9 +246,6 @@ async sub render_error ($self, $controller, $ctx, $code, $message = undef)
 
 async sub render_response ($self, $controller, $ctx, $result)
 {
-	return $ctx->res->value($result)
-		if $result isa PAGI::Response;
-
 	$ctx->res->status_try(200)->html($result);
 }
 
@@ -483,10 +480,8 @@ customize error pages.
 	$self->render_response($controller, $ctx, $result)
 
 Renders a response from C<$result>, which contains what was returned by the
-handler. A L<PAGI::Response> value is sent as it is (see
-L<Thunderhorse::Response/value>); anything else is rendered as HTML with status
-C<200> unless a status was already set. Can be overridden to change this
-behavior.
+handler. Can be overridden to change the default behavior of rendering result
+as HTML.
 
 =head3 on_startup
 
