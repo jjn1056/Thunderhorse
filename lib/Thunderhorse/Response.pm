@@ -9,6 +9,18 @@ use Gears::X::Thunderhorse;
 extends 'PAGI::ResponseBuilder';
 with 'Thunderhorse::Message';
 
+# NOTE: behaviour inherited from PAGI::ResponseBuilder that differs from the
+# PAGI::Response builder (PAGI-Tools 0.002) this class extended before:
+# - json() leaves key order unspecified (it was canonical, sorted)
+# - cookie() sends path=/ by default and lower-case attribute names, and URI-
+#   escapes the value; delete_cookie() sends expires as well as max-age
+# - empty() is a 200 unless a status was set (it was 204)
+# - a redirect's status belongs to the redirect: choosing another body after
+#   it uses the status set with status(), or 200 (the 302 used to stick)
+# - header_all() returns an array reference (it was a list)
+# - text() and html() take only defined strings (references were stringified)
+# - send_file() is file(); cors() is gone, PAGI::Middleware::CORS does it
+
 sub FOREIGNBUILDARGS ($class, %args)
 {
 	Gears::X::Thunderhorse->raise('no context for response')
@@ -42,6 +54,12 @@ sub is_ready ($self)
 	return false;
 }
 
+# NOTE: PAGI-Tools sends any response as an application:
+# $res->to_app->($scope, $receive, $send). This method only keeps
+# Context::send_res and try_send_res unchanged, which is the least disruptive
+# port. Following the PAGI-Tools way instead, those two call sites would call
+# $self->res->to_app->($self->scope, $self->receiver, $self->sender), and this
+# method could go.
 async sub respond ($self, $send)
 {
 	my $context = $self->context;

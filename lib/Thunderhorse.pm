@@ -119,7 +119,11 @@ sub build_handler ($controller, $destination)
 		# NOTE: this needs to be here, since we want to use $send from this context
 		# NOTE: a response that fails before it starts sending (a missing
 		# file, for example) goes through error handling like a failing
-		# handler; once sending has started it can only be rethrown
+		# handler; once sending has started it can only be rethrown.
+		# PAGI-Tools' File response checks the file when it is sent, where
+		# the old send_file() checked it when called, inside the handler's
+		# try above. Without this catch a missing file would bypass on_error
+		# and reach the server as a bare 500.
 		try {
 			await $ctx->try_send_res;
 		}
