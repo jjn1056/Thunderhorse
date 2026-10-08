@@ -53,8 +53,11 @@ package SSETestApp {
 		);
 	}
 
+	our $nostart_ran = 0;
+
 	async sub nostart ($self, $ctx)
 	{
+		$nostart_ran = 1;
 		return;
 	}
 
@@ -154,7 +157,9 @@ subtest 'should report a declined stream' => sub {
 };
 
 subtest 'should decline a stream its handler never starts' => sub {
+	$SSETestApp::nostart_ran = 0;
 	my $events = intercept { sse $app, '/nostart' };
+	ok $SSETestApp::nostart_ran, 'the handler ran';
 	my @asserts = map { $_->facet_data->{assert} // () } $events->event_list;
 	is [map { $_->{details} } grep { !$_->{pass} } @asserts], ['Connecting to sse /nostart failed'],
 		'connect failure reported';

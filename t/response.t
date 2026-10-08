@@ -50,6 +50,11 @@ package ResponseApp {
 				$ctx->res->header('Content-Type' => 'application/json')->text('{}')
 			},
 			'/content_type_undef' => sub ($self, $ctx) { $ctx->res->content_type(undef)->text('u') },
+			'/header_type_redirect' => sub ($self, $ctx) {
+				$ctx->res->header('Content-Type' => 'text/x-r')->redirect('/to')
+			},
+			'/type_redirect' => sub ($self, $ctx) { $ctx->res->content_type('text/x-r')->redirect('/to') },
+			'/header_undef_type' => sub ($self, $ctx) { $ctx->res->header('Content-Type' => undef)->text('a') },
 			'/no_content' => sub ($self, $ctx) { $ctx->res->content_type('text/plain')->status(204) },
 			'/no_content_with_body' => sub ($self, $ctx) { $ctx->res->status(204)->text('body') },
 			'/extra_arguments' => sub ($self, $ctx) { $ctx->res->text('x', status => 201) },
@@ -152,6 +157,22 @@ subtest 'a Content-Type set through header gets the charset, as through content_
 	http_header_is 'content-type', 'text/csv; charset=utf-8';
 	http $app, GET '/header_json_type';
 	http_header_is 'content-type', 'application/json';
+};
+
+subtest 'a Content-Type set before a redirect is kept' => sub {
+	for my $path ('/header_type_redirect', '/type_redirect') {
+		http $app, GET $path;
+		http_status_is 302;
+		http_header_is 'location', '/to';
+		http_header_is 'content-type', 'text/x-r';
+	}
+};
+
+subtest 'an undefined Content-Type header value is an error' => sub {
+	@errors = ();
+	http $app, GET '/header_undef_type';
+	http_status_is 500;
+	is scalar(@errors), 1, 'error hook fired';
 };
 
 subtest 'content_type(undef) leaves the body default in place' => sub {

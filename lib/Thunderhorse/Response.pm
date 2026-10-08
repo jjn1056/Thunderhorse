@@ -80,7 +80,7 @@ sub content_type ($self, @type)
 sub header ($self, $name, $value)
 {
 	return $self->content_type($value)
-		if lc $name eq 'content-type';
+		if lc $name eq 'content-type' && defined $value;
 
 	push $self->_headers->@*, $name, $value;
 	return $self;
@@ -159,7 +159,9 @@ sub _response_value ($self)
 		unless $self->_has_body;
 
 	my ($class, $body) = $self->_body->@*;
-	return response('Redirect', $body, @status, headers => \@headers)
+	return response('Redirect', $body, @status,
+		($self->_has_content_type ? (content_type => $self->_content_type) : ()),
+		headers => \@headers)
 		if $class eq 'Redirect';
 
 	my @content_type = $self->_has_content_type
@@ -273,14 +275,16 @@ Sets the status only if none was set yet.
 
 Sets the content type, which wins over the body's own default. A text type
 without a C<charset> parameter is sent with C<; charset=utf-8>; a JSON type is
-sent as it is. Without an argument, returns the content type that was set, or
+sent as it is. C<undef> clears a type set earlier, so the body's default
+applies again. Without an argument, returns the content type that was set, or
 C<undef>.
 
 =head3 header
 
 	$res = $res->header($name, $value)
 
-Adds a response header.
+Adds a response header. A C<Content-Type> header, in any case, sets the
+content type instead, as L</content_type> does.
 
 =head3 text
 
