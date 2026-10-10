@@ -1,110 +1,80 @@
 package Thunderhorse::Response;
 
 use v5.40;
-use Mooish::Base -standard;
 
-use Gears::X::Thunderhorse;
+use Exporter qw(import);
+use PAGI::Response ();
 
-extends 'PAGI::Response';
-with 'Thunderhorse::Message';
+our @EXPORT_OK = qw(response);
 
-sub FOREIGNBUILDARGS ($class, %args)
+# Errors from response() are the caller's: report them at the caller's line.
+$Carp::Internal{'Thunderhorse::Response'}++;
+
+my %own_class;
+
+sub response ($name = undef, @args)
 {
-	Gears::X::Thunderhorse->raise('no context for response')
-		unless $args{context};
+	return PAGI::Response::response($name, @args)
+		unless defined $name && !ref $name && $name =~ m{\A\w+(?:::\w+)*\z};
 
-	return ($args{context}->pagi->[0]);
+	my $own = "Thunderhorse::Response::$name";
+	$own_class{$name} //= ($own->can('new') || _has_file($own)) ? 1 : 0;
+
+	return PAGI::Response::response($own_class{$name} ? "+$own" : $name, @args);
 }
 
-sub update ($self, $scope, $receive, $send)
+sub _has_file ($class)
 {
-	$self->{scope} = $scope;
-}
-
-sub _allows_empty_body ($self, $status)
-{
-	# HTTP protocol hardcodes - these statuses can have empty bodies
-	return $status < 200
-		|| $status == 204
-		|| ($status >= 300 && $status < 400);
-}
-
-sub is_ready ($self)
-{
-	return true if $self->has_body_source;
-
-	return $self->_allows_empty_body($self->status)
-		if $self->has_status;
-
-	return false;
+	(my $file = "$class.pm") =~ s{::}{/}g;
+	return 1 if $INC{$file};
+	return !!grep { !ref && -f "$_/$file" } @INC;
 }
 
 __END__
 
 =head1 NAME
 
-Thunderhorse::Response - Response wrapper for Thunderhorse
+Thunderhorse::Response - Build the responses your handlers return
 
 =head1 SYNOPSIS
 
-	async sub show ($self, $ctx, $id)
+	use Thunderhorse::Response qw(response);
+
+	sub show ($self, $ctx, $id)
 	{
-		$ctx->res->text("Hello World");
-		$ctx->res->json({data => 'value'});
-		$ctx->res->redirect('/login');
+		return response('JSON', {id => $id});
+	}
+
+	sub created ($self, $ctx)
+	{
+		return response('HTML', $html, status => 201);
 	}
 
 =head1 DESCRIPTION
 
-Thunderhorse::Response is a thin wrapper around L<PAGI::Response> that
-integrates with L<Thunderhorse::Context>. It provides a fluent interface for
-building HTTP responses, including JSON, HTML, redirects, and file
-downloads.
+Handlers in Thunderhorse return a complete response, and Thunderhorse sends it.
+This module exports C<response>, which builds one by name.
 
-This class extends L<PAGI::Response> and mixes in C<Thunderhorse::Message> to
-provide context integration.
+=head1 FUNCTIONS
 
-=head1 INTERFACE
+=head2 response
 
-Inherits all interface from L<PAGI::Response>, and adds the interface
-documented below.
+	$response = response($name, @arguments)
 
-=head2 Attributes
+Builds a response. C<$name> is looked up as C<Thunderhorse::Response::$name>
+first, then as C<PAGI::Response::$name> (C<Text>, C<HTML>, C<JSON>,
+C<Problem>, C<Redirect>, C<Empty>, C<File>, C<Stream>, C<NDJSON>). C<+Exact>
+names an exact class. The arguments go to the class's constructor unchanged:
+the body first, then C<status>, C<content_type> and C<headers>; see
+L<PAGI::Response>.
 
-=head3 context
+A class of your own under C<Thunderhorse::Response::> (for example a JSON with
+your defaults) is found by the same name, so handlers need not change. A class
+that fails to load is reported, never silently replaced by PAGI-Tools' class.
 
-The L<Thunderhorse::Context> object for this request (weakened).
-
-I<Required in the constructor>
-
-=head2 Methods
-
-=head3 new
-
-	$object = $class->new(%args)
-
-Standard Mooish constructor. Consult L</Attributes> section for available
-constructor arguments.
-
-=head3 update
-
-	$res->update($scope, $receive, $send)
-
-Updates the internal PAGI scope. Called automatically when the context's PAGI
-tuple changes via setter of L<Thunderhorse::Context/pagi>.
-
-=head3 is_ready
-
-	$bool = $res->is_ready()
-
-Returns whether this response is ready as far as Thunderhorse is concerned.
-Responses which are ready will cause the context to become consumed after the
-route handler returns.
-
-Response is ready if it has a body, or if it has a status which does not
-require body like C<204 No Content> or C<3XX>.
+The result is a L<PAGI::Response> value, which any PAGI-Tools component also
+accepts.
 
 =head1 SEE ALSO
 
-L<Thunderhorse>, L<PAGI::Response>, L<Thunderhorse::Context>
-
+L<Thunderhorse>, L<PAGI::Response>
