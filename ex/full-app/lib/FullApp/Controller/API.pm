@@ -3,6 +3,7 @@ package FullApp::Controller::API;
 use v5.40;
 use Mooish::Base;
 use Future::AsyncAwait;
+use Thunderhorse::Response qw(response);
 
 extends 'Thunderhorse::Controller';
 
@@ -39,6 +40,6 @@ sub list_locations ($self, $ctx)
 		}
 	} $self->flatten_locations($self->router);
 
-	$ctx->res->json(\@locations);
+	return response('JSON', \@locations);
 }
 
