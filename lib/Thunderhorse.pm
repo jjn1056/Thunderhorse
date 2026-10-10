@@ -97,9 +97,9 @@ sub build_handler ($controller, $destination)
 				if (!$ctx->is_consumed) {
 					if (defined $result) {
 						unless (blessed $result && $result->can('to_app')) {
-							$result = await $controller->render_response($ctx, $result);
+							$result = $controller->render_response($ctx, $result);
 							$result = await $result
-								if $result isa 'Future';
+								while $result isa 'Future';
 						}
 						$ctx->_choose_response($result);
 					}
@@ -1230,12 +1230,14 @@ the system. There are two usage patterns for event handling with hooks:
 	async sub on_error ($self, $ctx, $error)
 	{
 		warn "error occured: $error";
+		return await $self->render_error($ctx, 500);
 	}
 
 	# in app
 	async sub on_error ($self, $controller, $ctx, $error)
 	{
 		warn "error occured: $error";
+		return await $self->render_error($controller, $ctx, 500);
 	}
 
 Declaring hook like this allows full control over handling of an event. It can be

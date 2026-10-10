@@ -172,10 +172,13 @@ async sub _handle_error ($self, $controller, $error)
 	$self->_set_error_handled(true);
 	$self->_clear_chosen;
 
-	my $page = await $controller->_on_error($self, $error);
-	$page = await $page if $page isa 'Future';
+	my $page = $controller->_on_error($self, $error);
+	$page = await $page while $page isa 'Future';
 
 	unless (blessed $page && $page->can('to_app')) {
+		# an on_error that answered with render_error but did not return the page
+		return $self->_chosen if $self->_has_chosen;
+
 		warn "on_error returned no PAGI application\n";
 		$page = response('Text', 'Internal Server Error', status => 500);
 	}

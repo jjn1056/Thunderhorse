@@ -298,4 +298,73 @@ subtest 'an error_page that returns no application is an error, answered once' =
 	like dies { http NotAnAppPage->new, GET '/boom' }, qr/a response must be a PAGI application/;
 };
 
+subtest 'an on_error that calls render_error without returning its page still answers with it' => sub {
+	package RenderOnlyOnError {
+		use Mooish::Base -standard;
+		use Future::AsyncAwait;
+
+		extends 'Thunderhorse::App';
+
+		sub build ($self)
+		{
+			$self->router->add('/boom' => {to => sub { die "handler boom\n" }});
+		}
+
+		async sub on_error ($self, $controller, $ctx, $error)
+		{
+			await $self->render_error($controller, $ctx, 503, 'down for a moment');
+			return;
+		}
+	}
+
+	my @warnings;
+	local $SIG{__WARN__} = sub { push @warnings, @_ };
+	http RenderOnlyOnError->new, GET '/boom';
+	http_status_is 503;
+	http_text_is 'down for a moment';
+	is \@warnings, [], 'no failsafe warning';
+};
+
+subtest 'a hook override written as a plain sub works' => sub {
+	package PlainHooks {
+		use Mooish::Base -standard;
+		use Thunderhorse::Response qw(response);
+
+		extends 'Thunderhorse::App';
+
+		sub build ($self)
+		{
+			$self->router->add('/boom' => {to => sub { die "handler boom\n" }});
+			$self->router->add('/string' => {to => sub { 'a string' }});
+		}
+
+		sub error_page ($self, $controller, $ctx, $code, $message = undef)
+		{
+			return response('Text', "plain page $code", status => $code);
+		}
+
+		sub render_response ($self, $controller, $ctx, $result)
+		{
+			return response('Text', "plain render: $result");
+		}
+	}
+
+	my $plain = PlainHooks->new;
+	http $plain, GET '/boom';
+	http_status_is 500;
+	http_text_is 'plain page 500';
+
+	http $plain, GET '/string';
+	http_status_is 200;
+	http_text_is 'plain render: a string';
+};
+
+subtest 'response finds a Thunderhorse class defined without a file' => sub {
+	package Thunderhorse::Response::Inline {
+		use parent -norequire, 'PAGI::Response::Text';
+	}
+
+	isa_ok response('Inline', 'x'), ['Thunderhorse::Response::Inline'];
+};
+
 done_testing;

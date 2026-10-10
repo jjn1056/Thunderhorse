@@ -18,7 +18,12 @@ sub response ($name = undef, @args)
 		unless defined $name && !ref $name && $name =~ m{\A\w+(?:::\w+)*\z};
 
 	my $own = "Thunderhorse::Response::$name";
-	$own_class{$name} //= ($own->can('new') || _has_file($own)) ? 1 : 0;
+
+	# already loaded, from a file or defined inline
+	return $own->new(@args)
+		if $own->isa('PAGI::Response');
+
+	$own_class{$name} //= _has_file($own) ? 1 : 0;
 
 	return PAGI::Response::response($own_class{$name} ? "+$own" : $name, @args);
 }

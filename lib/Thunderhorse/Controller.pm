@@ -85,8 +85,8 @@ sub error_page ($self, $ctx, $code, $message = undef)
 
 async sub render_error ($self, $ctx, $code, $message = undef)
 {
-	my $page = await $self->error_page($ctx, $code, $message);
-	$page = await $page if $page isa 'Future';
+	my $page = $self->error_page($ctx, $code, $message);
+	$page = await $page while $page isa 'Future';
 
 	$ctx->_clear_chosen;
 	return $ctx->_choose_response($page);
