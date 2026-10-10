@@ -9,6 +9,7 @@ use HTTP::Request::Common;
 
 package FacadeApp::Controller::Test::Facade {
 	use Mooish::Base -standard;
+	use Thunderhorse::Response qw(response);
 	use Future::AsyncAwait;
 
 	extends 'Thunderhorse::Context::Facade';
@@ -16,7 +17,7 @@ package FacadeApp::Controller::Test::Facade {
 	async sub send_something_later ($self)
 	{
 		await $self->app->loop->delay_future(after => 0.5);
-		$self->res->text('Something');
+		return response('Text', 'Something');
 	}
 }
 
@@ -40,8 +41,7 @@ package FacadeApp::Controller::Test {
 		$router->add(
 			'/good' => {
 				to => async sub ($self, $ctx) {
-					await $ctx->send_something_later;
-					return;
+					return await $ctx->send_something_later;
 				}
 			}
 		);
@@ -51,29 +51,6 @@ package FacadeApp::Controller::Test {
 			'/good2' => {
 				to => sub ($self, $ctx) {
 					return $ctx->send_something_later;
-				}
-			}
-		);
-
-		# this is also good, because calling send_res explicitly should not
-		# hurt TH as a whole.
-		$router->add(
-			'/good_send' => {
-				to => async sub ($self, $ctx) {
-					await $ctx->send_something_later;
-					await $ctx->send_res;
-				}
-			}
-		);
-
-		# ditto, but less confidently
-		$router->add(
-			'/good_send2' => {
-				to => async sub ($self, $ctx) {
-					$ctx->consume;
-					await $ctx->send_something_later;
-					await $ctx->try_send_res;
-					return;
 				}
 			}
 		);
@@ -125,20 +102,6 @@ subtest 'should render /good' => sub {
 
 subtest 'should render /good2' => sub {
 	http $app, GET '/good2';
-	http_status_is 200;
-	http_header_is 'Content-Type', 'text/plain; charset=utf-8';
-	http_text_is 'Something';
-};
-
-subtest 'should render /good_send' => sub {
-	http $app, GET '/good_send';
-	http_status_is 200;
-	http_header_is 'Content-Type', 'text/plain; charset=utf-8';
-	http_text_is 'Something';
-};
-
-subtest 'should render /good_send2' => sub {
-	http $app, GET '/good_send2';
 	http_status_is 200;
 	http_header_is 'Content-Type', 'text/plain; charset=utf-8';
 	http_text_is 'Something';

@@ -7,9 +7,11 @@ Thunderhorse::Cookbook - Reusable coding patterns
 =head2 Custom error pages
 
 Making prettier app-wide error pages is easy by overriding
-L<Thunderhorse::App/render_error>:
+L<Thunderhorse::App/error_page>:
 
-	async sub render_error ($self, $controller, $ctx, $code, $message = undef)
+	use Thunderhorse::Response qw(response);
+
+	async sub error_page ($self, $controller, $ctx, $code, $message = undef)
 	{
 		$controller //= $self->controller;
 		my $html;
@@ -21,7 +23,7 @@ L<Thunderhorse::App/render_error>:
 			$html = $controller->template('error/error', {title => status_message($code)});
 		}
 
-		$ctx->res->status($code)->html($html);
+		return response('HTML', $html, status => $code);
 	}
 
 For example for error 404, code above will try to render C<error/404.tt>

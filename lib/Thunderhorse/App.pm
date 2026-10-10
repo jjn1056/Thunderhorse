@@ -13,6 +13,7 @@ use Thunderhorse::AppController;
 use Path::Tiny ();    # path attribute exists in this package
 
 use HTTP::Status qw(status_message);
+use Thunderhorse::Response qw(response);
 use IO::Async::Loop;
 use Future::AsyncAwait;
 use PAGI::Utils qw(handle_lifespan);
@@ -93,6 +94,10 @@ has field 'extra_hooks' => (
 
 sub BUILD ($self, $)
 {
+	Gears::X::Thunderhorse->raise(
+		'render_error is no longer an override point; override error_page to customize error pages'
+	) if $self->can('render_error') != \&Thunderhorse::App::render_error;
+
 	$self->late_configure;
 }
 
@@ -208,7 +213,7 @@ async sub pagi ($self, $scope, $receive, $send)
 	# the context
 	if (!$ctx->is_consumed) {
 		await $self->render_error(undef, $ctx, 404);
-		await $ctx->send_res;
+		await $ctx->_send_guarded($self->controller);
 	}
 
 	return;
@@ -238,15 +243,26 @@ sub run ($self)
 	return $pagi;
 }
 
+async sub error_page ($self, $controller, $ctx, $code, $message = undef)
+{
+	$message = defined $message && !$self->is_production ? "$message" : status_message($code);
+	return response('Text', $message, status => $code);
+}
+
 async sub render_error ($self, $controller, $ctx, $code, $message = undef)
 {
-	$message = defined $message && !$self->is_production ? $message : status_message($code);
-	$ctx->empty_res->status($code)->text($message);
+	return await +($controller // $self->controller)->render_error($ctx, $code, $message);
 }
 
 async sub render_response ($self, $controller, $ctx, $result)
 {
-	$ctx->res->status_try(200)->html($result);
+	return response('HTML', $result)
+		unless ref $result;
+
+	Gears::X::Thunderhorse->raise(
+		'Thunderhorse cannot render a ' . ref($result)
+			. " reference; return response('JSON', ...) or override render_response"
+	);
 }
 
 #########################
@@ -311,8 +327,11 @@ async sub on_shutdown ($self, $state)
 
 async sub on_error ($self, $controller, $ctx, $error)
 {
+	return $error
+		if blessed $error && $error->can('to_app');
+
 	my $code = $error isa 'Gears::X::HTTP' ? $error->code : 500;
-	await +($controller // $self->controller)->render_error($ctx, $code, $error);
+	return await +($controller // $self->controller)->render_error($ctx, $code, $error);
 }
 
 __END__
@@ -468,20 +487,28 @@ Allowed values for C<$hook> are: C<startup>, C<shutdown>, C<error>.
 
 Returns true if the application is running in production environment.
 
+=head3 error_page
+
+	async sub error_page ($self, $controller, $ctx, $code, $message = undef) { ... }
+
+Returns the error page for C<$code>: a plain text response with the message, or
+the status message in production. Override it to customize error pages.
+
 =head3 render_error
 
-	$self->render_error($controller, $ctx, $code, $message = undef)
+	await $self->render_error($controller, $ctx, $code, $message = undef)
 
-Renders an error response with the given HTTP status code. Can be overridden to
-customize error pages.
+Answers the request with the controller's L<Thunderhorse::Controller/error_page>
+page and returns it. It is not an override point: an application or controller
+class that overrides it fails at startup with a message naming C<error_page>.
 
 =head3 render_response
 
 	$self->render_response($controller, $ctx, $result)
 
 Renders a response from C<$result>, which contains what was returned by the
-handler. Can be overridden to change the default behavior of rendering result
-as HTML.
+handler. Returns the response to send: a string becomes an HTML response, and
+anything else is an error. Can be overridden to change that.
 
 =head3 on_startup
 
@@ -505,7 +532,9 @@ values.
 
 Error hook called when an exception occurs during request processing. Can be
 overridden to customize error handling. Overriding it on application level will
-change the default handler for all controllers.
+change the default handler for all controllers. It returns the response to
+send: by default the error itself when it has a C<to_app> method, else
+L</render_error>'s page. It runs at most once per request.
 
 =head1 SEE ALSO
 

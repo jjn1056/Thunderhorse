@@ -13,7 +13,6 @@ has param 'context' => (
 		qw(
 			app
 			req
-			res
 		)
 	],
 );

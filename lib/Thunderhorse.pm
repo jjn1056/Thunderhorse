@@ -96,7 +96,12 @@ sub build_handler ($controller, $destination)
 
 				if (!$ctx->is_consumed) {
 					if (defined $result) {
-						await $controller->render_response($ctx, $result);
+						unless (blessed $result && $result->can('to_app')) {
+							$result = await $controller->render_response($ctx, $result);
+							$result = await $result
+								if $result isa 'Future';
+						}
+						$ctx->_choose_response($result);
 					}
 					else {
 						weaken $facade;
@@ -106,18 +111,14 @@ sub build_handler ($controller, $destination)
 				}
 			}
 			catch ($ex) {
-				await $controller->_on_error($ctx, $ex);
+				# once a response has started, an error can only be rethrown
+				die $ex if $ctx->connection->response_started;
+				$ctx->_choose_response(await $ctx->_handle_error($controller, $ex));
 			}
 		}
 
-		# NOTE: this method will not send the response if we already sent or if
-		# the response is not ready. It does not check whether the context is
-		# consumed altogether, so a manually consumed context with a non-ready
-		# response will not send anything, likely rendering some kind of error
-		# page (but not 404). Currently, a PAGI error is raised, informing
-		# about app returning without sending respnose.
 		# NOTE: this needs to be here, since we want to use $send from this context
-		await $ctx->try_send_res;
+		await $ctx->_send_guarded($controller);
 
 		# if this is a bridge and bridge did not render, it means we are
 		# free to go deeper. Avoid first match, as it was handled already
@@ -397,33 +398,25 @@ concurrent requests being handled at the same time due to asynchronous nature
 of PAGI. If destination is C<async>, then it must C<await> all asynchronous
 calls as defined by PAGI specification.
 
-Return value of the destination sub is by default sent to the requestor as
-C<text/html> with status code C<200>. This is a common and handy shortcut, but
-it is equally easy to do something else. Take the following destination example:
+A destination returns its response, and Thunderhorse sends it. Build one with
+C<response> from L<Thunderhorse::Response>:
+
+	use Thunderhorse::Response qw(response);
 
 	async sub build_custom ($self, $ctx)
 	{
-		$ctx->res->text('Plaintext response');
-		return 'this will not get rendered';
+		return response('Text', 'Plaintext response');
 	}
 
-This takes response (L<Thunderhorse::Response>) from context, and sets
-plaintext body manually. This action I<consumes> the context, marking it as
-finished. In this case, return value of the destination is ignored.
-
-
-Another example:
-
-	sub set_custom2 ($self, $ctx)
+	sub created ($self, $ctx)
 	{
-		$ctx->res->content_type('text/plain');
-		return 'this is rendered as plaintext';
+		return response('HTML', $html, status => 201, content_type => 'application/xhtml+xml');
 	}
 
-This time, the return value of the destination is not ignored, since only
-setting response metadata does not cause the context to be consumed. Status and
-I<Content-Type> header will not be overridden, so the response will be sent as
-plaintext.
+A returned string is a common and handy shortcut: it is sent as C<text/html>
+with status C<200>. Any value with a C<to_app> method is sent as it is, so a
+destination can also return a L<PAGI::Pages> page or another PAGI-Tools
+application. Returning C<undef> lets the next matching location answer.
 
 While not very common, a destination can be unimplemented when C<to> is
 skipped. Unimplemented locations will be "stepped over" during request
@@ -536,12 +529,12 @@ bridge is created when you call C<add> on the result of another C<add>:
 
 When C</admin/users> is requested, both C<check_admin> and C<list_users> will
 be called in sequence. The bridge destination receives the same arguments as
-regular destinations. If the bridge consumes the context, further matching
-stops. Otherwise, the next matching location is called. For this reason, bridge
+regular destinations. If the bridge answers (returns a response, raises an
+error, or calls C<render_error>), further matching stops. Otherwise, the next matching location is called. For this reason, bridge
 destinations should return C<undef> explicitly to avoid consuming the context
 by accident:
 
-	sub check_admin ($self, $ctx)
+	async sub check_admin ($self, $ctx)
 	{
 		await $self->render_error($ctx, 403)
 			unless $ctx->session->get('is_admin', false);
@@ -657,7 +650,7 @@ would expect.
 One unique feature of Thunderhorse is that it does not stop searching for
 matches once it finds a match. Instead, it gathers a list of matching locations
 and then proceeds to execute them in order. It stops once one of the handlers
-consumes the context, which is usually done by setting a response body. If no
+consumes the context, which is usually done by returning a response. If no
 handlers consumed the context, a I<404 Not Found> error page is rendered.
 
 This allows for superb flexibility, but has a couple of interesting side
@@ -782,9 +775,9 @@ Currently, the context can be consumed by:
 
 =over
 
-=item * Setting the response body in L<Thunderhorse::Context/res>
+=item * Returning a response, or a string, which renders as HTML
 
-=item * Setting the response status to one of the statuses which does not require a body
+=item * Answering with an error page through L</render_error>
 
 =item * Closing a websocket connection in L<Thunderhorse::Context/ws>
 
@@ -1248,7 +1241,7 @@ the system. There are two usage patterns for event handling with hooks:
 Declaring hook like this allows full control over handling of an event. It can be
 added on controller level or on application level. Overriding any hook method
 can completely change how Thunderhorse handles this type of event. The
-method calls will be awaited, but their return values are ignored.
+method calls will be awaited; C<on_error> returns the response to send.
 
 Hooks methods prioritize controller-specific implementations over
 application-level ones. For example, if a controller defines its own
@@ -1323,8 +1316,10 @@ This hook's method B<cannot be declared on a controller level>.
 The C<on_error> hook is called when an exception occurs during request
 processing.
 
-This hook should consume the context by setting a response. The default handler
-calls L</render_error> method a text page with an error message.
+This hook returns the response to send. The default handler returns an error
+with a C<to_app> method as it is, and otherwise answers with L</render_error>.
+It runs at most once per request: if the error page itself fails, that error
+propagates to the server.
 
 =head3 Overriding system methods
 
@@ -1338,34 +1333,29 @@ them.
 	async sub render_response($self, $ctx, $result) { ... }
 	async sub render_response($self, $controller, $ctx, $result) { ... }
 
-This method is only run when a handler for a location does not consume the
-context, but returns a defined value. The default implementation does the
-following things:
+Run when a destination returns a defined value that is not already a response.
+It returns the response to send. The default turns a string into
+C<response('HTML', $result)> and raises an error for anything else, naming the
+type and suggesting C<response('JSON', ...)>. Override it for more DWIM, such
+as rendering references as JSON.
 
-=over
+=head4 error_page
 
-=item * tries to set HTTP status code to 200 (if it was not set already)
+	async sub error_page($self, $ctx, $code, $message = undef) { ... }
+	async sub error_page($self, $controller, $ctx, $code, $message = undef) { ... }
 
-=item * tries to set C<Content-Type> header to C<text/html> (if it was not set already)
-
-=item * sets C<$result> as the response body
-
-=back
-
-It can be modified to add more DWIM-based behavior, for example check for
-references and render them as JSON/YAML.
+Returns the error page for C<$code>. The default is a plain text response whose
+body is the message, or the status message in production (see
+C<is_production>), so original error messages are not shown to users. Override
+it to customize error pages.
 
 =head4 render_error
 
-	async sub render_error($self, $ctx, $code, $message = undef) { ... }
-	async sub render_error($self, $controller, $ctx, $code, $message = undef) { ... }
+	await $self->render_error($ctx, $code, $message = undef)
 
-This method's default implementation builds a plain text response with code
-C<500>. The default implementation checks C<is_production> method of the
-application to avoid rendering the original error message which may contain
-sensitive information. It also acknowledges the existence of L<Gears::X::HTTP>,
-which may change the error code to something else. Original response is
-discarded and a new one is built.
+Answers the request with the error page from L</error_page>, and returns it. A
+bridge that calls it and returns C<undef> is still answered. It is not an
+override point: a class that overrides it fails at startup.
 
 =head2 Performance tuning
 

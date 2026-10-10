@@ -9,6 +9,7 @@ use HTTP::Request::Common;
 package EdgeApp {
 	use v5.40;
 	use Mooish::Base -standard;
+	use Thunderhorse::Response qw(response);
 
 	extends 'Thunderhorse::App';
 
@@ -68,7 +69,7 @@ package EdgeApp {
 
 	sub return_future ($self, $ctx)
 	{
-		return $ctx->res->text('return text without await');
+		return response('Text', 'return text without await');
 	}
 
 	sub bad_consume ($self, $ctx)

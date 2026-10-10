@@ -1,6 +1,20 @@
 Revision history for Thunderhorse
 
 {{$NEXT}}
+	[Public interface changes]
+	- Handlers return their response: use Thunderhorse::Response qw(response)
+	  and return response('Name', ...) (Thunderhorse::Response::Name first,
+	  then PAGI::Response::Name)
+	- error_page is the method to override for custom error pages
+
+	[Breaking changes]
+	- Removed $ctx->res, $ctx->empty_res and Thunderhorse::Response as a
+	  builder: status, headers and Content-Type are response options, and a
+	  bodiless answer is response('Empty')
+	- render_error is no longer an override point; overriding it fails at
+	  startup. Override error_page instead
+	- Hook methods return their response; render_response returns one
+	- Requires PAGI::Tools 0.003000
 
 0.106 - 2026-06-27
 	[Public interface changes]

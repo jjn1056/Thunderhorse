@@ -9,6 +9,7 @@ use HTTP::Request::Common;
 
 package ToolsApp {
 	use Mooish::Base -standard;
+	use Thunderhorse::Response qw(response);
 
 	use Gears::X::HTTP;
 
@@ -30,7 +31,7 @@ package ToolsApp {
 		$r->add(
 			'/redirect' => {
 				to => sub ($self, $ctx) {
-					$ctx->res->redirect($self->url_for('t1', arg => 'hi'));
+					return response('Redirect', $self->url_for('t1', arg => 'hi'));
 				}
 			}
 		);

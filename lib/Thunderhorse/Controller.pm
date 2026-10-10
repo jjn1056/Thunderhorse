@@ -3,6 +3,7 @@ package Thunderhorse::Controller;
 use v5.40;
 use Mooish::Base -standard;
 
+use Future::AsyncAwait;
 use Thunderhorse::Context::Facade;
 use URI;
 
@@ -70,14 +71,30 @@ sub abs_url_for ($self, $name, @args)
 	return $self->abs_url($self->url_for($name, @args));
 }
 
-sub render_error ($self, $ctx, $code, $message = undef)
+sub BUILD ($self, $)
 {
-	$self->app->render_error($self, $ctx, $code, $message);
+	Gears::X::Thunderhorse->raise(
+		'render_error is no longer an override point; override error_page to customize error pages'
+	) if $self->can('render_error') != \&Thunderhorse::Controller::render_error;
+}
+
+sub error_page ($self, $ctx, $code, $message = undef)
+{
+	return $self->app->error_page($self, $ctx, $code, $message);
+}
+
+async sub render_error ($self, $ctx, $code, $message = undef)
+{
+	my $page = await $self->error_page($ctx, $code, $message);
+	$page = await $page if $page isa 'Future';
+
+	$ctx->_clear_chosen;
+	return $ctx->_choose_response($page);
 }
 
 sub render_response ($self, $ctx, $result)
 {
-	$self->app->render_response($self, $ctx, $result);
+	return $self->app->render_response($self, $ctx, $result);
 }
 
 #####################
@@ -107,6 +124,7 @@ Thunderhorse::Controller - Base controller class for Thunderhorse
 
 	use v5.40;
 	use Mooish::Base;
+	use Thunderhorse::Response qw(response);
 
 	extends 'Thunderhorse::Controller';
 
@@ -117,7 +135,7 @@ Thunderhorse::Controller - Base controller class for Thunderhorse
 
 	async sub show ($self, $ctx, $id)
 	{
-		$ctx->res->text("User ID: $id");
+		return response('Text', "User ID: $id");
 	}
 
 =head1 DESCRIPTION
@@ -186,20 +204,28 @@ application.
 Convenience method which combines L</url_for> and L</abs_url> to generate an
 absolute URL for a named route.
 
+=head3 error_page
+
+	async sub error_page ($self, $ctx, $code, $message = undef) { ... }
+
+Returns the error page for C<$code>. By default, it delegates to the
+application's L<Thunderhorse::App/error_page>. Override it for
+controller-specific error pages.
+
 =head3 render_error
 
-	$self->render_error($ctx, $code, $message = undef)
+	await $self->render_error($ctx, $code, $message = undef)
 
-Renders an error response with the given HTTP status code. By default, it
-delegates to the application's L<Thunderhorse::App/render_error> method.
+Answers the request with L</error_page>'s page and returns it. Not an override
+point; see L<Thunderhorse::App/render_error>.
 
 =head3 render_response
 
 	$self->render_response($ctx, $result)
 
 Renders a response from C<$result>, which contains what was returned by the
-handler. By default, it delegates to the application's
-L<Thunderhorse::App/render_response> method.
+handler, and returns the response to send. By default, it delegates to the
+application's L<Thunderhorse::App/render_response> method.
 
 =head3 on_error
 

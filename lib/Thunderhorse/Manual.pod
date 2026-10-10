@@ -65,7 +65,7 @@ Request class.
 
 =item * L<Thunderhorse::Response> (L<PAGI::Response>)
 
-Response class.
+Builds the responses handlers return.
 
 =item * L<Thunderhorse::WebSocket> (L<PAGI::WebSocket>)
 

@@ -7,11 +7,12 @@ use Devel::StrictMode;
 
 use Future::AsyncAwait;
 use Thunderhorse::Request;
-use Thunderhorse::Response;
+use Thunderhorse::Response qw(response);
 use Thunderhorse::WebSocket;
 use Thunderhorse::SSE;
 use PAGI::Stash;
 use PAGI::Session;
+use PAGI::Utils qw(invoke_app);
 
 extends 'Gears::Context';
 
@@ -34,12 +35,6 @@ has field 'req' => (
 has field 'connection' => (
 	(STRICT ? (isa => HasMethods ['response_started']) : ()),
 	lazy => sub ($self) { $self->scope->{'pagi.connection'} },
-);
-
-has field 'res' => (
-	(STRICT ? (isa => InstanceOf ['Thunderhorse::Response']) : ()),
-	lazy => sub ($self) { Thunderhorse::Response->new(context => $self) },
-	clearer => -hidden,
 );
 
 # NOTE: websocket must be lazy, because it will die if scope is not websocket
@@ -72,12 +67,24 @@ has field '_consumed' => (
 	default => false,
 );
 
+# the response this request will be answered with, once one is chosen
+has field '_chosen' => (
+	writer => '_set_chosen',
+	predicate => '_has_chosen',
+	clearer => '_clear_chosen',
+);
+
+has field '_error_handled' => (
+	(STRICT ? (isa => Bool) : ()),
+	writer => '_set_error_handled',
+	default => false,
+);
+
 sub update ($self, $scope, $receive, $send)
 {
 	$self->_set_pagi([$scope, $receive, $send]);
 
 	$self->req->update($scope, $receive, $send);
-	$self->res->update($scope, $receive, $send);
 
 	$self->ws->update($scope, $receive, $send)
 		if $self->has_ws;
@@ -113,15 +120,18 @@ sub is_consumed ($self)
 {
 	return $self->_consumed
 		|| $self->connection->response_started
-		|| $self->res->is_ready
+		|| $self->_has_chosen
 		|| ($self->has_ws && $self->ws->is_closed)
 		|| ($self->has_sse && $self->sse->is_closed);
 }
 
-sub empty_res ($self)
+sub _choose_response ($self, $value)
 {
-	$self->_clear_res;
-	return $self->res;
+	Gears::X::Thunderhorse->raise('a response must be a PAGI application (an object with to_app)')
+		unless blessed $value && $value->can('to_app');
+
+	$self->_set_chosen($value);
+	return $value;
 }
 
 async sub send_res ($self)
@@ -131,7 +141,8 @@ async sub send_res ($self)
 	Gears::X::Thunderhorse->raise('response was already sent')
 		if $self->connection->response_started;
 
-	await $self->res->respond($self->sender);
+	my $response = $self->_has_chosen ? $self->_chosen : response('Empty', status => 200);
+	await invoke_app($response, $self->pagi->@*);
 
 	return;
 }
@@ -147,8 +158,43 @@ async sub try_send_res ($self)
 	return
 		if $self->connection->response_started;
 
-	await $self->res->respond($self->sender)
-		if $self->res->is_ready;
+	await invoke_app($self->_chosen, $self->pagi->@*)
+		if $self->_has_chosen;
+
+	return;
+}
+
+# The page for an error, from on_error: at most once per request, so a broken
+# error page propagates instead of recursing.
+async sub _handle_error ($self, $controller, $error)
+{
+	die $error if $self->_error_handled;
+	$self->_set_error_handled(true);
+	$self->_clear_chosen;
+
+	my $page = await $controller->_on_error($self, $error);
+	$page = await $page if $page isa 'Future';
+
+	unless (blessed $page && $page->can('to_app')) {
+		warn "on_error returned no PAGI application\n";
+		$page = response('Text', 'Internal Server Error', status => 500);
+	}
+
+	return $page;
+}
+
+# Sends the chosen response. A failure before the response starts is answered
+# with an error page; after it, it is rethrown.
+async sub _send_guarded ($self, $controller)
+{
+	try {
+		await $self->try_send_res;
+	}
+	catch ($ex) {
+		die $ex if $self->connection->response_started;
+		$self->_choose_response(await $self->_handle_error($controller, $ex));
+		await $self->try_send_res;
+	}
 
 	return;
 }
@@ -167,7 +213,7 @@ Thunderhorse::Context - Request handling context
 		my $stashed_value = $ctx->stash->get('key');
 		my $session_value = $ctx->session->get('key');
 
-		$ctx->res->text("Hello World");
+		return response('Text', 'Hello World');
 	}
 
 =head1 DESCRIPTION
@@ -208,11 +254,6 @@ B<writer:> C<set_match>
 =head3 req
 
 The L<Thunderhorse::Request> object for this context. Created automatically
-with a reference to this context.
-
-=head3 res
-
-The L<Thunderhorse::Response> object for this context. Created automatically
 with a reference to this context.
 
 =head3 ws
@@ -302,27 +343,21 @@ Returns true if the context has been consumed either explicitly via
 L</consume>, or implicitly by sending a response, closing a WebSocket
 connection, or closing an SSE stream.
 
-=head3 empty_res
-
-	$new_res = $ctx->empty_res()
-
-Discards the current response attached to the context, then builds and returns
-a fresh one. Useful if you want to completely discard response data.
-
 =head3 send_res
 
 	await $ctx->send_res()
 
-Tries to send the response back to the client. Dies if the response has already
-been sent. Force-sends the response even if it has an empty body.
+Sends the response chosen for this request (see
+L<Thunderhorse::App/render_error>), or an empty C<200> if none was chosen. Dies
+if a response has already been sent. Handlers normally just return their
+response.
 
 =head3 try_send_res
 
 	$ctx->try_send_res()
 
 Similar as L</send_res>, but does nothing if the response has already been
-sent. Also skips sending the response if it is not ready yet, according to
-L<Thunderhorse::Response/is_ready>.
+sent. Also does nothing if no response was chosen.
 
 If the handler started a Server-Sent Events stream and left it open, closes the
 stream instead, since PAGI requires an explicit close to end one.
@@ -333,5 +368,5 @@ automatically use it after the route handler returns.
 =head1 SEE ALSO
 
 L<Thunderhorse>, L<Gears::Context>, L<Thunderhorse::Request>,
-L<Thunderhorse::Response>, L<Thunderhorse::WebSocket>, L<Thunderhorse::SSE>
+L<Thunderhorse::Response> (C<response>), L<Thunderhorse::WebSocket>, L<Thunderhorse::SSE>
 

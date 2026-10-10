@@ -12,6 +12,7 @@ use Future::AsyncAwait;
 
 package BasicApp {
 	use Mooish::Base -standard;
+	use Thunderhorse::Response qw(response);
 
 	use Gears::X::HTTP;
 
@@ -35,8 +36,7 @@ package BasicApp {
 		$router->add(
 			'/send' => {
 				to => sub ($self, $ctx) {
-					$ctx->res->text('this gets rendered');
-					return 'this does not get rendered';
+					return response('Text', 'this gets rendered');
 				}
 			}
 		);
@@ -44,11 +44,11 @@ package BasicApp {
 		$router->add(
 			'/preset_headers/?ex_code' => {
 				to => sub ($self, $ctx, $code) {
-					$ctx->res->status(201)->content_type('application/xml');
 					Gears::X::HTTP->raise($code, 'test')
 						if $code;
 
-					return 'this gets rendered as xml';
+					return response('HTML', 'this gets rendered as xml',
+						status => 201, content_type => 'application/xml');
 				}
 			}
 		);
@@ -125,7 +125,7 @@ subtest 'should route to 404' => sub {
 	http_text_is 'Not Found';
 };
 
-subtest 'should render text set by res->text' => sub {
+subtest 'should render a returned Text response' => sub {
 	http $app, GET '/send';
 	http_status_is 200;
 	http_header_is 'Content-Type', 'text/plain; charset=utf-8';

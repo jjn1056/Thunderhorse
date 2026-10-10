@@ -11,6 +11,7 @@ use Future::AsyncAwait;
 
 package HooksApp {
 	use Mooish::Base -standard;
+	use Thunderhorse::Response qw(response);
 
 	extends 'Thunderhorse::App';
 
@@ -50,17 +51,17 @@ package HooksApp {
 		);
 	}
 
-	async sub render_error ($self, $controller, $ctx, $code, $message = undef)
+	async sub error_page ($self, $controller, $ctx, $code, $message = undef)
 	{
 		$self->set_render_error_called($self->render_error_called + 1);
 		$message //= "app error: $code";
-		$ctx->res->status($code)->text($message);
+		return response('Text', $message, status => $code);
 	}
 
 	async sub render_response ($self, $controller, $ctx, $result)
 	{
 		$self->set_render_response_called($self->render_response_called + 1);
-		$ctx->res->text($result);
+		return response('Text', $result);
 	}
 
 	async sub on_error ($self, $controller, $ctx, $error)
@@ -83,6 +84,7 @@ package HooksApp {
 
 package HooksApp::Controller::CustomHooks {
 	use Mooish::Base -standard;
+	use Thunderhorse::Response qw(response);
 
 	extends 'Thunderhorse::Controller';
 
@@ -140,14 +142,14 @@ package HooksApp::Controller::CustomHooks {
 	async sub render_response ($self, $ctx, $result)
 	{
 		$self->set_render_response_called($self->render_response_called + 1);
-		$ctx->res->text($result);
+		return response('Text', $result);
 	}
 
-	async sub render_error ($self, $ctx, $code, $message = undef)
+	async sub error_page ($self, $ctx, $code, $message = undef)
 	{
 		$self->set_render_error_called($self->render_error_called + 1);
 		$message //= "custom error: $code";
-		$ctx->res->status($code)->text($message);
+		return response('Text', $message, status => $code);
 	}
 
 	async sub on_error ($self, $ctx, $error)
