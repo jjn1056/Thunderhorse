@@ -14,6 +14,9 @@ Revision history for Thunderhorse
 	- render_error is no longer an override point; overriding it fails at
 	  startup. Override error_page instead
 	- Hook methods return their response; render_response returns one
+	- An error after the response has started is no longer passed to
+	  on_error: error notifications still fire, then it is rethrown to the
+	  server
 	- Requires PAGI::Tools 0.003000
 
 0.106 - 2026-06-27

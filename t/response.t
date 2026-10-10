@@ -222,10 +222,11 @@ subtest 'a missing file fails before the response starts and reaches on_error' =
 	like \@errors, [qr/Cannot inspect selected file/], 'error hook saw it';
 };
 
-subtest 'a failing stream producer is not answered with a second response' => sub {
+subtest 'a failing stream producer is logged, then rethrown without a second response' => sub {
 	@errors = ();
 	like dies { http $app, GET '/stream_dies' }, qr/producer boom/, 'rethrown';
-	is \@errors, [], 'on_error was not invoked';
+	is scalar(@errors), 1, 'the error hooks were notified once';
+	like $errors[0], qr/producer boom/, 'with the error';
 };
 
 subtest 'an explicit send of a failing stream is rethrown, not answered again' => sub {

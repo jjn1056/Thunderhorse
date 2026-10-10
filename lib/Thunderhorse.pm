@@ -111,8 +111,9 @@ sub build_handler ($controller, $destination)
 				}
 			}
 			catch ($ex) {
-				# once a response has started, an error can only be rethrown
-				die $ex if $ctx->connection->response_started;
+				# once a response has started, an error can only be logged and rethrown
+				$ctx->_rethrow_after_start($controller, $ex)
+					if $ctx->connection->response_started;
 				$ctx->_choose_response(await $ctx->_handle_error($controller, $ex));
 			}
 		}
@@ -1322,6 +1323,10 @@ This hook returns the response to send. The default handler returns an error
 with a C<to_app> method as it is, and otherwise answers with L</render_error>.
 It runs at most once per request: if the error page itself fails, that error
 propagates to the server.
+
+An error after the response has started cannot be answered with a page: the
+C<error> notifications still fire (so it is logged), C<on_error> does not, and
+the error is rethrown to the server.
 
 =head3 Overriding system methods
 

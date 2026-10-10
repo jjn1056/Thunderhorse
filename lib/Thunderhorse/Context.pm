@@ -186,15 +186,24 @@ async sub _handle_error ($self, $controller, $error)
 	return $page;
 }
 
+# An error after the response has started cannot be answered: the error
+# notifications (logging) still fire, on_error does not, and it is rethrown.
+sub _rethrow_after_start ($self, $controller, $error)
+{
+	$self->app->_fire_hooks(error => $controller, $self, $error);
+	die $error;
+}
+
 # Sends the chosen response. A failure before the response starts is answered
-# with an error page; after it, it is rethrown.
+# with an error page; after it, it is logged and rethrown.
 async sub _send_guarded ($self, $controller)
 {
 	try {
 		await $self->try_send_res;
 	}
 	catch ($ex) {
-		die $ex if $self->connection->response_started;
+		$self->_rethrow_after_start($controller, $ex)
+			if $self->connection->response_started;
 		$self->_choose_response(await $self->_handle_error($controller, $ex));
 		await $self->try_send_res;
 	}
