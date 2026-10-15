@@ -63,7 +63,7 @@ Client transaction class.
 
 Request class.
 
-=item * L<Thunderhorse::Response> (L<PAGI::ResponseBuilder>)
+=item * L<Thunderhorse::Response> (L<Thunderhorse::ResponseBuilder>)
 
 Response class.
 
