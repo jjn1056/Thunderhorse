@@ -6,10 +6,10 @@ use Future::AsyncAwait;
 
 use Gears::X::Thunderhorse;
 
-extends 'PAGI::ResponseBuilder';
+extends 'Thunderhorse::ResponseBuilder';
 with 'Thunderhorse::Message';
 
-# NOTE: behaviour inherited from PAGI::ResponseBuilder that differs from the
+# NOTE: behaviour inherited from Thunderhorse::ResponseBuilder that differs from the
 # PAGI::Response builder (PAGI-Tools 0.002) this class extended before:
 # - json() leaves key order unspecified (it was canonical, sorted)
 # - cookie() sends path=/ by default and lower-case attribute names, and URI-
@@ -93,17 +93,17 @@ Thunderhorse::Response - Response wrapper for Thunderhorse
 
 =head1 DESCRIPTION
 
-Thunderhorse::Response is a thin wrapper around L<PAGI::ResponseBuilder> that
+Thunderhorse::Response is a thin wrapper around L<Thunderhorse::ResponseBuilder> that
 integrates with L<Thunderhorse::Context>. It provides a fluent interface for
 building HTTP responses, including JSON, HTML, redirects, and file
 downloads.
 
-This class extends L<PAGI::ResponseBuilder> and mixes in
+This class extends L<Thunderhorse::ResponseBuilder> and mixes in
 C<Thunderhorse::Message> to provide context integration.
 
 =head1 INTERFACE
 
-Inherits all interface from L<PAGI::ResponseBuilder>, and adds the interface
+Inherits all interface from L<Thunderhorse::ResponseBuilder>, and adds the interface
 documented below.
 
 =head2 Attributes
@@ -151,4 +151,4 @@ C<$send>. L<Thunderhorse::Context/send_res> calls it.
 
 =head1 SEE ALSO
 
-L<Thunderhorse>, L<PAGI::ResponseBuilder>, L<Thunderhorse::Context>
+L<Thunderhorse>, L<Thunderhorse::ResponseBuilder>, L<Thunderhorse::Context>
