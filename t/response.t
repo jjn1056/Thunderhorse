@@ -5,7 +5,7 @@ use HTTP::Request::Common;
 
 ################################################################################
 # This tests Thunderhorse::Response in Thunderhorse: readiness, sending, and
-# error handling around it. PAGI::ResponseBuilder's own behaviour (content
+# error handling around it. Thunderhorse::ResponseBuilder's own behaviour (content
 # types, redirects, cookies, statuses) is tested in PAGI-Tools.
 ################################################################################
 
@@ -67,7 +67,7 @@ subtest 'text sends UTF-8 plain text' => sub {
 	http_text_is "caf\x{e9}";
 };
 
-# PAGI::ResponseBuilder's text() takes only strings; only error pages
+# Thunderhorse::ResponseBuilder's text() takes only strings; only error pages
 # stringify, in render_error, because that is where the value is an exception.
 subtest 'an object passed to text is an error' => sub {
 	http $app, GET '/text_object';
