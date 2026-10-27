@@ -235,6 +235,12 @@ sub run ($self)
 		}
 	}
 
+	# outermost, so the controllers and every middleware added above share one
+	# stash: a value stored or changed further down the stack is not lost to a
+	# layer further up
+	require PAGI::Middleware::Stash;
+	$pagi = PAGI::Middleware::Stash->new->wrap($pagi);
+
 	return $pagi;
 }
 
@@ -419,6 +425,10 @@ constructor arguments.
 Returns a PAGI application coderef ready for C<pagi-server>. If called from a
 L<thunderhorse> script (C<THUNDERHORSE_SCRIPT> environmental value is set),
 returns the app object instead.
+
+The application is wrapped in L<PAGI::Middleware::Stash>, outside every
+middleware added with L</add_middleware>, so they and the controllers share one
+L<Thunderhorse::Context/stash>.
 
 =head3 pagi
 
